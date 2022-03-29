@@ -1,0 +1,29 @@
+# Required packages
+install.packages('tidyverse')
+
+# Load Packages
+library(tidyverse)
+
+# Reads in Influnzena Research Database CSV file
+# This is the 'IRD- Prepared Data CSV' file renamed
+
+test <- read_csv("IRD_data.csv") 
+
+# Get vector of all accession numbers [Later verisons will filter the data and break this particular step into stages]
+
+accession_nums <- pull(test, accession)
+
+# Read in Sequence from NCBI (IRD uses GENBANK accession numbers)
+# Format  -> https://www.ncbi.nlm.nih.gov/nuccore/ + accession_number + ?report=fasta
+# PROTOTYPE: As a psudeofilter, take only 10 random sequences. Then create a vector to store the FASTA seqs for later.
+
+rand_accession_nums <- sample(accession_nums, 10, replace=TRUE)
+fasta_seqs <- vector('double', length(10))
+
+# PROTOTYPE: Only psudeofiltered
+for (num in rand_accession_nums) {
+    url <- paste("https://www.ncbi.nlm.nih.gov/nuccore/", num, "?report=fasta", sep = "")
+    genbank_entry <- read_html(url) 
+    fasta <- genbank_entry %>% html_elements("pre") %>% html_text2()
+    append(fasta_seqs, fasta)
+}
