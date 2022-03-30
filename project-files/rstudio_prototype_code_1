@@ -1,29 +1,76 @@
-# Required packages
-install.packages('tidyverse')
+---
+title: "PROTYPE"
+author: "Thomas Tragale"
+date: ""
+output:
+  pdf_document: default
+  html_document: default
+---
 
-# Load Packages
+### Load packages
+
+```{r load-packages, message=FALSE, warning=FALSE}
+
 library(tidyverse)
+library(rentrez)
+library(Biostrings)
+
+```
+
+
+### GOAL 1 - Scrape Protein Sequences of 10 Random Entries from CSV 'IRD_data'.csv'
+
+```{r, read data}
 
 # Reads in Influnzena Research Database CSV file
 # This is the 'IRD- Prepared Data CSV' file renamed
 
-test <- read_csv("IRD_data.csv") 
+data <- read_csv("IRD_data.csv")
 
-# Get vector of all accession numbers [Later verisons will filter the data and break this particular step into stages]
+accession_nums <- pull(data, accession)
 
-accession_nums <- pull(test, accession)
+#PROTOTYPE - Intended as a stand-in for a filter
+accession_nums <- sample(accession_nums, 10, replace=TRUE)
 
-# Read in Sequence from NCBI (IRD uses GENBANK accession numbers)
-# Format  -> https://www.ncbi.nlm.nih.gov/nuccore/ + accession_number + ?report=fasta
-# PROTOTYPE: As a psudeofilter, take only 10 random sequences. Then create a vector to store the FASTA seqs for later.
+```
+ISSUE: Verison of data is always .1, shouldn't be a massive problem since this data is unlikely to be updated after deposition. This is a limitation because rentrez requires the verison num to perform the scrape. 
 
-rand_accession_nums <- sample(accession_nums, 10, replace=TRUE)
-fasta_seqs <- vector('double', length(10))
+ISSUE: Shouldn't I be required to send NCBI my identity/information when I open connections like this? I'm concerned my IP could be blocked if I start performing larger scale testing. 
 
-# PROTOTYPE: Only psudeofiltered
-for (num in rand_accession_nums) {
-    url <- paste("https://www.ncbi.nlm.nih.gov/nuccore/", num, "?report=fasta", sep = "")
-    genbank_entry <- read_html(url) 
-    fasta <- genbank_entry %>% html_elements("pre") %>% html_text2()
-    append(fasta_seqs, fasta)
+```{r, write seqs to file}
+
+for (num in accession_nums){
+  
+  sequence <- entrez_fetch(db="nuccore", id=c(num, '.1'), rettype="fasta")
+  write(sequence, file="FASTA_seqs.txt", append = TRUE)
+  
 }
+
+```
+
+### GOAL 2 - Group the Sequences into two clusters by 'date'
+
+```{r}
+
+print(accession_nums)
+
+```
+
+```{r}
+
+
+
+```
+
+### GOAL 3 - Perform an MSA between Seuqneces in the two Clusters
+
+```{r}
+
+```
+
+### GOAL 4 - Perform a slower alingment between the two conserved sequences produced by the MSAs 
+
+```{r}
+
+
+```
