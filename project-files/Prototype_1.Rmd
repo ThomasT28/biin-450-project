@@ -1,0 +1,196 @@
+---
+title: "HITTS PROTOTYPE 0.2"
+author: "Thomas Tragale"
+date: ""
+output:
+  pdf_document: default
+  html_document: default
+---
+
+### Load Packages
+
+```{r load-packages, include=FALSE}
+
+library(tidyverse)
+library(lubridate)
+library(rentrez)
+library(Biostrings)
+library(msa)
+
+```
+
+### Load Program Functions
+
+```{r program-functions}
+
+# Function: Takes Block List, downloads sequences into individual text files.
+# Input: Vector of data sub-tables grouped by time
+# Output: Creates .txt files containing sequences for each time block
+
+# Notes - Function includes a delay to avoid overtaxing NCBI's servers
+
+download_sequences <- function(time_blocks){
+
+  file_names <- list()
+  
+  for (block in time_blocks){
+    
+    accession_nums <- pull(block, accession)
+    
+    file_name <- paste(
+        as.character(block[1, "protein"]),
+        '_seqs_',
+        as.character(block[1, "year"]),
+        '.fasta',
+        sep='')
+    
+    file.create(file_name)
+    file_names <- c(file_names, file_name)
+    
+    for (num in accession_nums){
+      sequence <- entrez_fetch(db="protein", id=num, rettype="fasta")
+      write(sequence, file_name,append=TRUE)
+    }
+    
+  } # Time Block Loop - Closing Bracket
+  
+ return(file_names)
+  
+} # Function Closing Bracket
+
+```
+
+### GOAL 1 - Arrange Protein Sequences into 'Time Blocks'
+
+```{r read data, echo=FALSE}
+
+# Load Data > 'NCBI_data.csv'
+
+data <- read_csv("NCBI_data.csv")
+
+```
+
+
+```{r format-data}
+
+# Convert date column to lubridate value.
+
+data$collection_date <- as_date(data$collection_date)
+
+# Add new column containing dates rounded to desired Time Block (Nearest Year)
+
+data <- data %>%
+  mutate(year = format(data$collection_date, "%Y"))
+
+# Filter to HA 1 protein only
+
+data <- data %>%
+  filter(grepl("H1", genotype, fixed=TRUE))
+
+```
+
+```{r time-block-subtables}
+
+# Split data into sub-tables and then download sequences for proteins within the Time Blocks
+
+block_list <- data %>%
+  group_by(year) %>%
+  group_split()
+
+```
+
+### GOAL 2 - Write each Time Block to a different .txt file
+
+```{r gen-seq-files, eval=TRUE}
+
+# SET API KEY
+
+set_entrez_key("4460fcbbf1baa92f669e7affbdb9ef6a0d0a")
+Sys.getenv("ENTREZ_KEY")
+
+# Write Seqs to file
+
+file_handles <- download_sequences(block_list)
+
+```
+
+### GOAL 3 - Perform an MSA among all Sequences in each Time Block, saving the consensus output / scores
+
+```{r get-seq-count}
+
+# An MSA can not be performed if less than 3 seqs are present
+# IDEA: Combine files or MSAs to ensure that 3 seqs are present (dynamic programming of time blocks)
+
+seq_counts <- list()
+
+for (block in block_list){
+  
+  count <- nrow(block)
+  seq_counts <- c(seq_counts, count)
+  
+}
+
+```
+
+```{r read-in-seqs}
+
+sequences <- list()
+
+for (path in file_handles){
+  
+  seq <- readAAStringSet(path)
+  sequences <- c(sequences, seq)
+  
+}
+
+
+```
+
+```{r test-function}
+
+#CONT HERE
+# Additions:
+# 1. Write Consensus sequences by Time Block to a .fasta file
+# 2. Write consensus scores by Time Block to a .fasta file
+# 3. Perform a so-called 'total' MSA of all sequences (output consensus / scores)
+
+compute_conservation <- function(seqs, counts){
+  
+  data("BLOSUM62")
+  
+  index <- 1
+  
+  for (seq in seqs){
+    
+    if (counts[[index]] >= 3){
+    
+    alignment <- msaClustalOmega(seq)
+    scores <- msaConservationScore(alignment, BLOSUM62)
+    print(scores)
+    
+    }
+    
+    index <- index + 1
+    
+  }
+  
+} # Function End Bracket
+
+compute_conservation(sequences, seq_counts)
+print('DONE')
+
+```
+
+### GOAL 4 - Take the consensus output of each Time Block's MSA and align them all together
+
+ISSUE: Issuing an external service atm, would prefer if it was entirely local. https://www.ebi.ac.uk/Tools/msa/emboss_cons/
+
+```{r}
+
+# Currently stored as '2010_2022-consensus.txt'
+
+```
+
+### GOAL 5 - Predict Probability of Exposure
+
+### GOAL 6 - Overall High Conservation Scores with High Expsoure Likelihood
