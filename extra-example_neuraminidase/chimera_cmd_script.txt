@@ -1,0 +1,68 @@
+# README: Move cmd and attribute files to Chimera directory or Set with - cd [directory_path]
+close all; wait 10
+open 4M4Y; wait 10
+del ligand; wait 10
+del solvent; wait 10
+background solid black; wait 10
+scale 0.7; wait 10
+turn x 50
+del :.b;
+del :.d;
+del :.f;
+defattr neuraminidase_consensus_chimera_2010.txt raiseTool false; sleep 2
+rangecolor conservation_2010 min cyan mid red
+copy file 2010_SideView_4M4Y.png png
+turn x 100
+copy file 2010_TopDown_4M4Y.png png
+turn x -100
+sleep 120
+defattr neuraminidase_consensus_chimera_2011.txt raiseTool false; sleep 2
+rangecolor conservation_2011 min cyan mid red
+copy file 2011_SideView_4M4Y.png png
+turn x 100
+copy file 2011_TopDown_4M4Y.png png
+turn x -100
+sleep 120
+defattr neuraminidase_consensus_chimera_2012.txt raiseTool false; sleep 2
+rangecolor conservation_2012 min cyan mid red
+copy file 2012_SideView_4M4Y.png png
+turn x 100
+copy file 2012_TopDown_4M4Y.png png
+turn x -100
+sleep 120
+defattr neuraminidase_consensus_chimera_2013.txt raiseTool false; sleep 2
+rangecolor conservation_2013 min cyan mid red
+copy file 2013_SideView_4M4Y.png png
+turn x 100
+copy file 2013_TopDown_4M4Y.png png
+turn x -100
+sleep 120
+defattr neuraminidase_consensus_chimera_2014.txt raiseTool false; sleep 2
+rangecolor conservation_2014 min cyan mid red
+copy file 2014_SideView_4M4Y.png png
+turn x 100
+copy file 2014_TopDown_4M4Y.png png
+turn x -100
+sleep 120
+defattr neuraminidase_consensus_chimera_2015.txt raiseTool false; sleep 2
+rangecolor conservation_2015 min cyan mid red
+copy file 2015_SideView_4M4Y.png png
+turn x 100
+copy file 2015_TopDown_4M4Y.png png
+turn x -100
+sleep 120
+defattr neuraminidase_consensus_chimera_2016.txt raiseTool false; sleep 2
+rangecolor conservation_2016 min cyan mid red
+copy file 2016_SideView_4M4Y.png png
+turn x 100
+copy file 2016_TopDown_4M4Y.png png
+turn x -100
+sleep 120
+defattr neuraminidase_consensus_chimera_2017.txt raiseTool false; sleep 2
+rangecolor conservation_2017 min cyan mid red
+copy file 2017_SideView_4M4Y.png png
+turn x 100
+copy file 2017_TopDown_4M4Y.png png
+turn x -100
+sleep 120
+write 0 4M4Y_HITTS.pdb
