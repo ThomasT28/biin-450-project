@@ -1,0 +1,357 @@
+---
+title: "HITTS - Alpha 1.0"
+author: "Thomas Tragale"
+date: "5/3/22"
+output:
+  pdf_document: default
+---
+
+### Load Packages
+
+Package Implementation: 
+
+1. Tideyverse: Data modification and simplified syntax.
+2. Lubridate: Simplified date handling and modifications.
+3. Rentrez: R. functions for interfacing with NCBI entrez.
+4. Biostrings: Required for MSA, creates special sequence objects.
+5. MSA: Performs conservation computations 
+
+```{r load-packages, include=FALSE}
+
+library(tidyverse)
+library(lubridate)
+library(rentrez)
+library(Biostrings)
+library(msa)
+
+```
+
+### Load Program Functions
+
+This section contains all major functions used in this program. See comments for detailed documentation.
+
+Definitions:
+
+1. Time Block List (time_blocks / block_list): A list of tidyverse tables, each containing the observations broken up by collection date
+2. Sequences / Seqs: A list of AA sequences obtained by reading in FASTA sequence files
+3. Counts: A list of the number of observations in each time block.
+
+```{r program-functions}
+
+# USE: Takes Block List, downloads sequences into individual text files.
+# INPUT: Vector of data sub-tables grouped by time
+# OUTPUT: Creates .txt files containing sequences for each time block, returns list of file names
+
+download_sequences <- function(time_blocks){
+
+  file_names <- list()
+  
+  for (block in time_blocks){
+    
+    accession_nums <- pull(block, accession)
+    
+    file_name <- paste(
+        as.character(block[1, "protein"]),
+        '_seqs_',
+        as.character(block[1, "year"]),
+        '.fasta',
+        sep='')
+    
+    file.create(file_name)
+    file_names <- c(file_names, file_name)
+    
+    for (num in accession_nums){
+      sequence <- entrez_fetch(db="protein", id=num, rettype="fasta")
+      write(sequence, file_name,append=TRUE)
+    }
+    
+  } # Time Block Loop - Closing Bracket
+  
+ return(file_names)
+  
+} # Function Closing Bracket
+
+# USE: Computes all conservation scores from MSAs derived from time blocks
+# INPUT: AAseqs from protein sequence files, count of sequences in each file and the time block list.
+# OUTPUT: Generates raw conservation score data file and a Chimera attribute file for each time block. Returns file names.
+
+compute_conservation <- function(seqs, counts, blocks){
+  
+  data("BLOSUM62")
+  
+  file_name <- paste(
+        as.character(block[1, "protein"]),
+        'raw_consensus_scores',
+        '.fasta',
+        sep='')
+    
+    file.create(file_name)
+    
+  years <- c()
+  for (block in blocks){
+    years <- c(years, as.character(block[1,"year"]))
+  }
+  
+  file_handles <- c(file_name)
+  
+  index <- 1
+  
+  for (seq in seqs){
+    
+    if (counts[[index]] >= 3){
+    
+    alignment <- msaClustalOmega(seq)
+    scores <- msaConservationScore(alignment, BLOSUM62)
+    write(paste('>Year: ', years[[index]], sep = ""), file_name, append = TRUE)
+    write(scores, file_name, append = TRUE)
+    
+    chimera_file_name <- generate_chimera_attribute_files(seq, blocks[[index]], scores) #novel
+    file_handles <- c(file_handles, chimera_file_name)
+    
+    }
+    
+    index <- index + 1
+    
+  }
+  
+  return(file_handles)
+  
+} # Function End Bracket
+
+# USE: Helper function for compute_conservation(), generates Chimera attribute files
+# INPUT: One MSA sequences object, its matching time block and the computed scores 
+# INPUT: Generates Attribute file and returns its name
+
+generate_chimera_attribute_files <- function(seq, block, scores){
+  
+  data("BLOSUM62")
+  
+  file_name <- paste(
+        as.character(block[1, "protein"]),
+        '_consensus_chimera_',
+        as.character(block[1, "year"]),
+        '.txt',
+        sep='')
+    
+  file.create(file_name)
+  
+  write(c(paste('attribute: conservation', as.character(block[1, "year"]), sep = '_'),
+          'match mode: any', 'recipient: residues'), 
+           file_name, append = TRUE)
+  
+  index <- 1
+  for (conNum in scores){
+    
+    write(paste('\t:', as.character(index), '\t', as.character(conNum), sep = ''), file_name, append = TRUE)
+    index <- index + 1
+  }
+  
+  
+  return(file_name)
+  
+} # Function End Bracket
+
+```
+
+### GOAL 1 - Arrange Protein Sequences into 'Time Blocks'
+
+To arrange the protein sequences into segments which are divided according to their collection date. The master data table is divided into sub-tables via tidyverse functions which creates a list of sub-tables containing observations for each of these 'blocks' of time. 
+
+```{r read-data, echo=FALSE}
+
+# Load Data > 'NCBI_data.csv'
+
+#data <- read_csv("NCBI_data.csv")
+data <-read_csv("NCBI_NA_data.csv")
+
+```
+The initial data table contains an attribute for collection_date which is not easy to handle. Lubridate contains tools for converting these date character stirngs into 'date' class objects compatible with its own functions. In order to successfully divide the table into time blocks, the date should be rounded to the nearest desired length. In this case year. 
+
+```{r format-data}
+
+# Convert date column to lubridate value.
+
+data$collection_date <- as_date(data$collection_date)
+
+# Add new column containing dates rounded to desired Time Block (Nearest Year)
+
+data <- data %>%
+  mutate(year = format(data$collection_date, "%Y"))
+
+```
+
+Tidyverse allows for simplified table manipulation, in this case the master data table is grouped according to the year, which was added in the previous step. The function 'group_by' applies an 'invisbile' attribute to each observation denoting which group it belongs too according to the specificed paramters. The function 'group_split' receives the modified master table via the pipe operator '%>%', which simply automatically inputs it into the next function. The sub-tables are split from the master table and assigned into the 'block_list' which contain all the data attributes neatly grouped. Part of the grouping process arranges the date by year, so the first sub-table contains the first year and so on. 
+
+```{r time-block-subtables}
+
+# Split data into sub-tables and then download sequences for proteins within the Time Blocks
+
+block_list <- data %>%
+  group_by(year) %>%
+  group_split()
+
+```
+
+### GOAL 2 - Write each Time Block to a different .txt file
+
+The time blocks can now be used with Rentrez to download sequences from NCBI via the entrez service. The API key is a character string generated from an NCBI account, which allows for the user to call NCBI 10 times per second instead of 3 times per second. The function to set this key as a global variable is provided by Rentrez. The 'Sys.getenv' function simply displays the current API key.
+
+The function 'download_sequences' takes the time blocks, downloads all protein sequences from NCBI and writes them to individual FASTA files. See the program functions above for more details. 
+
+```{r gen-seq-files, eval=TRUE}
+
+# SET API KEY
+
+set_entrez_key("4460fcbbf1baa92f669e7affbdb9ef6a0d0a") #README: Insert NCBI generated Entrez key
+Sys.getenv("ENTREZ_KEY")
+
+# Write Seqs to file
+
+file_handles <- download_sequences(block_list)
+
+```
+
+### GOAL 3 - Perform an MSA among all Sequences in each Time Block, saving the consensus output / scores
+
+An MSA or multiple sequence alignment is a method by which several protein or nucleotide sequences are compared to discover evolutionary  or functional relationships based on their similarity. An MSA requires at least 3 sequences to be computed. 
+
+The 'seq_counts' is a list containing the number of observations in each time block. It is checked in the functiosn to ensure that a year with less than 3 sequences does not get passed to an MSA function, which would crash the program. 
+
+```{r get-seq-count}
+
+# An MSA can not be performed if less than 3 seqs are present
+# There is enough data, but this is still an important to avoid an error
+
+seq_counts <- list()
+
+for (block in block_list){
+  
+  count <- nrow(block)
+  seq_counts <- c(seq_counts, count)
+  
+}
+
+```
+
+#### START - DEMO CODE
+
+This demo code contains a backup of the file handles for the hemagglutinin analysis. Since previous code chunks output files containing all the required information for subsequent functions. They can be selectively disabled once they have run for the first time to avoid recomputing the data. Turning this code section on will simply load the file names which would have been generated by the demo into the environment. 
+
+```{r seqs-handle-backup, eval=FALSE}
+
+# Backup File Handles: To avoid recomputing
+file_handles <- c('hemagglutinin_seqs_2010.fasta', 'hemagglutinin_seqs_2011.fasta', 'hemagglutinin_seqs_2012.fasta', 'hemagglutinin_seqs_2013.fasta', 'hemagglutinin_seqs_2014.fasta', 'hemagglutinin_seqs_2015.fasta', 'hemagglutinin_seqs_2016.fasta', 'hemagglutinin_seqs_2017.fasta')
+
+```
+
+#### END - DEMO CODE
+
+The amino acid (AA) strings are generated by Biostrings and produces a special object class containing all of the sequences in each time block. These sequences, grouped by time block, are sent to a list which contains them for later computation. For the purpose of documentation, MSAs are also printed as PDFs. 
+
+```{r read-in-seqs}
+
+sequences <- list()
+
+for (path in file_handles){
+  
+  seq <- readAAStringSet(path)
+  sequences <- c(sequences, seq)
+  
+}
+```
+
+This calls the 'compute_conservation' program function, see above for details. 
+
+It outputs conservation score files as Chimera attribute files, which can be used to display the evolutionary history of the protein. 
+
+```{r compute-conservation-scores, eval=TRUE}
+
+con_score_handles <- compute_conservation(sequences, seq_counts, block_list)
+
+```
+
+#### START - DEMO CODE 
+
+This demo code contains a backup of the file handles for the hemagglutinin analysis. Since previous code chunks output files containing all the required information for subsequent functions. They can be selectively disabled once they have run for the first time to avoid recomputing the data. Turning this code section on will simply load the file names which would have been generated by the demo into the environment. 
+
+```{r con-core-backup, eval=FALSE}
+
+# Backup: Avoid recomputing
+con_score_handles <- c("hemagglutininraw_consensus_scores.fasta", "hemagglutinin_consensus_chimera_2010.txt", "hemagglutinin_consensus_chimera_2011.txt", "hemagglutinin_consensus_chimera_2012.txt", "hemagglutinin_consensus_chimera_2013.txt", "hemagglutinin_consensus_chimera_2014.txt", "hemagglutinin_consensus_chimera_2015.txt", "hemagglutinin_consensus_chimera_2016.txt", "hemagglutinin_consensus_chimera_2017.txt")
+
+```
+
+#### END - DEMO CODE
+
+### GOAL 4 - Chimera (Frontend)
+
+Chimera is a locally run program which allows for 3D visualization of PDB protein structures. Chimera is an incredibly useful service which has many tools for structure manipulation and analysis.This program generates a Chimera script file which will apply the conservation scores to the chosen structure.
+
+In the 'write' function below the script is set to open '4M4Y' a PDB structure for the demo protein hemagglutinin. This structure was chosen based on its completeness, high quality scores and relatedness to the sequences in the data. 
+
+The script contains instructions for running it, simply place the command script file and the consensus attribute files into the chimera directory. Then run the script with 'read [cmd_file_path]` via the Chimera command line. 
+
+Chimera will then close all existing structures, open the 4M4Y structure, delete the ligands to avoid errors. Turns the background white for easier viewing and applies the attribute files to the structure. These attributes are used to render the protein structure in shades of blue-red based on the value of the conservation score, with higher values being more red. The script contains wait and sleep commands to minimize lag. however this process is computationally demanding since Chimera must match each conservation score to each residue and compute its color. Once the command script has assigned all the attribute data, it will automatically save the file with the added attributes, so it will have conservation scores for every year in the analysis. Additionally it saves a .png image for each year when it is being displayed. 
+
+```{r generate-chimera-script}
+
+# Create a Chimera Script which cycles through conservation scores
+
+con_atr_files <- con_score_handles[-1] # Paths of Chimera compt. attribute files
+
+cmd_name <- 'chimera_cmd_script.txt'
+pdb_code <- '4M4Y'
+del_chains <- c('b', 'd', 'f') # Chains to DELETE from final structure, make this vector empty if no deletions
+
+file.create(cmd_name)
+
+write('# README: Move cmd and attribute files to Chimera directory or Set with - cd [directory_path]', cmd_name, append = TRUE)
+write('# WARNING: May generate lag > Run Script with - read [cmd_file_path] ')
+write(c('close all; wait 10', paste('open ', pdb_code, '; wait 10', sep=''), 'del ligand; wait 10', 'del solvent; wait 10', 'background solid black; wait 10', 'scale 0.7; wait 10'), cmd_name, append = TRUE)
+ write('turn x 50', cmd_name, append = TRUE)
+
+if (length(del_chains) > 0 ){
+  
+  for (chain in del_chains){
+    
+      write(paste('del :.', chain, ';', sep = ''), cmd_name, append = TRUE)
+    
+  }
+  
+}
+
+for (path in con_atr_files){
+  
+  year <- str_split(path, '_')
+  year <- unlist(year)
+  year <- year[4]
+  year <- substr(year, 1, 4)
+
+  write(paste('defattr ', as.character(path), ' raiseTool false; sleep 2', sep =''), cmd_name, append = TRUE)
+  write(paste('rangecolor ', 'conservation_', as.character(year), ' min cyan mid red', sep = ''), cmd_name, append = TRUE)
+  write(paste('copy file ', as.character(year), '_SideView_', pdb_code, '.png png', sep = ''), cmd_name, append = TRUE)
+  write('turn x 100', cmd_name, append = TRUE)
+  write(paste('copy file ', as.character(year), '_TopDown_', pdb_code, '.png png', sep = ''), cmd_name, append = TRUE)
+  write('turn x -100', cmd_name, append = TRUE)
+  write('sleep 120', cmd_name, append = TRUE)
+  
+}
+
+write(paste('write 0 ', pdb_code, '_HITTS.pdb', sep=''), cmd_name, append = TRUE)
+
+```
+
+This code simply outputs a notification to the user instructing them to look in the Chimera command script for instructions on running the analysis. 
+
+```{r instructions}
+
+print(paste('ANALYSIS GENERATED: See README in ', as.character(cmd_name)))
+
+```
+This will clear the environment of all objects in memory, saving resources for later processes. 
+
+```{r clear-enviro}
+
+rm(list = ls())
+
+```
